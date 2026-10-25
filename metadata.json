@@ -1,0 +1,6 @@
+{
+  "name": "PulmoScan AI - Lung Cancer Malignancy Detector",
+  "description": "Upload chest CT scans or radiographs for AI-driven pulmonary nodule analysis and malignancy likelihood estimation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
