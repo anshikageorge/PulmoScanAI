@@ -1,8 +1,8 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
-// Vercel serverless function configuration
+// Vercel serverless function configuration (max 15s on Hobby, up to 60s on Pro)
 export const config = {
-  maxDuration: 60, // allow up to 60 seconds for Gemini vision processing
+  maxDuration: 15,
 };
 
 // Analysis schema for structured Gemini response
@@ -228,10 +228,12 @@ Instructions:
         },
         config: {
           systemInstruction:
-            'You are a board-certified thoracic radiologist AI assistant specializing in pulmonary nodule characterization, Lung-RADS assessment, and chest imaging interpretation. Provide objective, precise, and structured diagnostic evaluations.',
+            'You are a board-certified thoracic radiologist AI assistant specializing in pulmonary nodule characterization, Lung-RADS assessment, and chest imaging interpretation. Provide objective, concise, and structured diagnostic evaluations.',
           responseMimeType: 'application/json',
           responseSchema: lungCancerSchema,
-          temperature: 0.2,
+          thinkingConfig: {
+            thinkingLevel: ThinkingLevel.LOW,
+          },
         },
       });
     } catch (modelErr: any) {
@@ -254,10 +256,9 @@ Instructions:
         },
         config: {
           systemInstruction:
-            'You are a board-certified thoracic radiologist AI assistant specializing in pulmonary nodule characterization, Lung-RADS assessment, and chest imaging interpretation. Provide objective, precise, and structured diagnostic evaluations.',
+            'You are a board-certified thoracic radiologist AI assistant specializing in pulmonary nodule characterization, Lung-RADS assessment, and chest imaging interpretation. Provide objective, concise, and structured diagnostic evaluations.',
           responseMimeType: 'application/json',
           responseSchema: lungCancerSchema,
-          temperature: 0.2,
         },
       });
     }

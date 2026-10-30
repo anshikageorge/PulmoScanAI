@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import dotenv from 'dotenv';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 dotenv.config();
 
@@ -242,10 +242,12 @@ Instructions:
       },
       config: {
         systemInstruction:
-          'You are a board-certified thoracic radiologist AI assistant specializing in pulmonary nodule characterization, Lung-RADS assessment, and chest imaging interpretation. Provide objective, precise, and structured diagnostic evaluations.',
+          'You are a board-certified thoracic radiologist AI assistant specializing in pulmonary nodule characterization, Lung-RADS assessment, and chest imaging interpretation. Provide objective, concise, and structured diagnostic evaluations.',
         responseMimeType: 'application/json',
         responseSchema: lungCancerSchema,
-        temperature: 0.2,
+        thinkingConfig: {
+          thinkingLevel: ThinkingLevel.LOW,
+        },
       },
     });
 

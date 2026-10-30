@@ -14,7 +14,7 @@ export async function prepareImageForAnalysis(
 
     img.onload = () => {
       try {
-        const maxDimension = 1024;
+        const maxDimension = 512;
         let width = img.naturalWidth || img.width || 512;
         let height = img.naturalHeight || img.height || 512;
 
@@ -43,7 +43,7 @@ export async function prepareImageForAnalysis(
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.80);
         const parts = dataUrl.split('base64,');
         resolve({ base64: parts[1], mimeType: 'image/jpeg' });
       } catch (err) {
