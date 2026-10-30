@@ -1,6 +1,11 @@
 import { GoogleGenAI, Type } from '@google/genai';
 
-// Analysis schema for structured Gemini 3.8 Flash response
+// Vercel serverless function configuration
+export const config = {
+  maxDuration: 60, // allow up to 60 seconds for Gemini vision processing
+};
+
+// Analysis schema for structured Gemini response
 const lungCancerSchema = {
   type: Type.OBJECT,
   properties: {
@@ -104,7 +109,11 @@ const lungCancerSchema = {
 };
 
 export default async function handler(req: any, res: any) {
-  // Handle CORS / preflight if needed
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -114,17 +123,42 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
+    let body = req.body;
+    if (Buffer.isBuffer(body)) {
+      body = JSON.parse(body.toString('utf-8'));
+    } else if (typeof body === 'string') {
+      body = JSON.parse(body);
+    } else if (!body) {
+      body = {};
+    }
+
     const { imageBase64, mimeType = 'image/jpeg', scanContext } = body;
 
     if (!imageBase64) {
       return res.status(400).json({ error: 'No image provided. Please upload a thoracic CT scan or chest X-ray image.' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    // Check multiple common environment variable names for the API key
+    const rawApiKey =
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.GOOGLE_GENAI_API_KEY ||
+      process.env.API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      process.env.VITE_GOOGLE_API_KEY;
+
+    let cleanApiKey = (rawApiKey || '').trim();
+    if (
+      (cleanApiKey.startsWith('"') && cleanApiKey.endsWith('"')) ||
+      (cleanApiKey.startsWith("'") && cleanApiKey.endsWith("'"))
+    ) {
+      cleanApiKey = cleanApiKey.slice(1, -1).trim();
+    }
+
+    if (!cleanApiKey) {
       return res.status(500).json({
-        error: 'GEMINI_API_KEY is not configured in server environment. Please configure it in your Vercel Project Settings > Environment Variables.',
+        error:
+          'No API key detected in Vercel environment. Please go to Vercel Project Settings > Environment Variables, add GEMINI_API_KEY or GOOGLE_API_KEY (with Production & Preview checked), and then click Deployments > Redeploy for the changes to take effect.',
       });
     }
 
@@ -146,7 +180,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const ai = new GoogleGenAI({
-      apiKey,
+      apiKey: cleanApiKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
@@ -175,29 +209,58 @@ Instructions:
    - Include standard investigative medical disclaimer.
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: effectiveMime,
-              data: cleanBase64,
+    let response: any;
+    try {
+      response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType: effectiveMime,
+                data: cleanBase64,
+              },
             },
-          },
-          {
-            text: promptText,
-          },
-        ],
-      },
-      config: {
-        systemInstruction:
-          'You are a board-certified thoracic radiologist AI assistant specializing in pulmonary nodule characterization, Lung-RADS assessment, and chest imaging interpretation. Provide objective, precise, and structured diagnostic evaluations.',
-        responseMimeType: 'application/json',
-        responseSchema: lungCancerSchema,
-        temperature: 0.2,
-      },
-    });
+            {
+              text: promptText,
+            },
+          ],
+        },
+        config: {
+          systemInstruction:
+            'You are a board-certified thoracic radiologist AI assistant specializing in pulmonary nodule characterization, Lung-RADS assessment, and chest imaging interpretation. Provide objective, precise, and structured diagnostic evaluations.',
+          responseMimeType: 'application/json',
+          responseSchema: lungCancerSchema,
+          temperature: 0.2,
+        },
+      });
+    } catch (modelErr: any) {
+      console.warn('Initial model gemini-3.8-flash failed, attempting gemini-flash-latest:', modelErr?.message);
+      // Fallback for keys that only have access to gemini-flash-latest
+      response = await ai.models.generateContent({
+        model: 'gemini-flash-latest',
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType: effectiveMime,
+                data: cleanBase64,
+              },
+            },
+            {
+              text: promptText,
+            },
+          ],
+        },
+        config: {
+          systemInstruction:
+            'You are a board-certified thoracic radiologist AI assistant specializing in pulmonary nodule characterization, Lung-RADS assessment, and chest imaging interpretation. Provide objective, precise, and structured diagnostic evaluations.',
+          responseMimeType: 'application/json',
+          responseSchema: lungCancerSchema,
+          temperature: 0.2,
+        },
+      });
+    }
 
     const responseText = response.text;
     if (!responseText) {
@@ -208,8 +271,12 @@ Instructions:
     return res.status(200).json({ success: true, result: parsedData });
   } catch (error: any) {
     console.error('Error analyzing lung scan:', error);
-    return res.status(500).json({
-      error: error?.message || 'Failed to process the scan. Please check your image format and try again.',
-    });
+    let userMsg = error?.message || 'Failed to process the scan.';
+    if (userMsg.includes('API_KEY_INVALID') || userMsg.includes('API key not valid')) {
+      userMsg = 'Invalid Google API Key. Please verify the key in Vercel Environment Variables and ensure it has Gemini API enabled in Google AI Studio.';
+    } else if (userMsg.includes('RESOURCE_EXHAUSTED') || userMsg.includes('Quota')) {
+      userMsg = 'Gemini API quota exceeded for this key. Please check your rate limits or billing in Google AI Studio.';
+    }
+    return res.status(500).json({ error: userMsg });
   }
 }

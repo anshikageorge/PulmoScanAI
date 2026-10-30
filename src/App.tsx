@@ -105,11 +105,23 @@ export default function App() {
         }),
       });
 
-      const data = await response.json();
+      let data: any = null;
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(
+          response.status === 404
+            ? 'API endpoint /api/analyze-lung-scan was not found. Please verify that your Vercel deployment includes the api/ folder.'
+            : `Server returned HTTP ${response.status}: ${text.slice(0, 160)}`
+        );
+      }
+
       clearInterval(stepInterval);
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Server error occurred during scan analysis.');
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Server error (HTTP ${response.status}) occurred during scan analysis.`);
       }
 
       setAnalysisResult(data.result);
