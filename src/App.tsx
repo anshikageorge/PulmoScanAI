@@ -167,20 +167,32 @@ export default function App() {
           </div>
         </div>
 
-        {/* Error Alert Banner */}
+        {/* Error Alert Banner with Instant Retry */}
         {errorMessage && (
-          <div className="rounded-2xl border border-rose-800 bg-rose-950/40 p-4 flex items-start space-x-3 text-rose-200">
-            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-            <div className="flex-1 text-xs">
-              <strong className="font-semibold block text-sm text-rose-300">Analysis Error</strong>
-              <span>{errorMessage}</span>
+          <div className="rounded-2xl border border-rose-800 bg-rose-950/50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-rose-200">
+            <div className="flex items-start space-x-3">
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <strong className="font-semibold block text-sm text-rose-300">Analysis Notice</strong>
+                <span className="leading-relaxed">{errorMessage}</span>
+              </div>
             </div>
-            <button
-              onClick={() => setErrorMessage(null)}
-              className="text-rose-400 hover:text-rose-200 text-xs font-semibold"
-            >
-              Dismiss
-            </button>
+            <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
+              <button
+                onClick={handleRunAnalysis}
+                disabled={isLoading}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow transition flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry Scan</span>
+              </button>
+              <button
+                onClick={() => setErrorMessage(null)}
+                className="px-2.5 py-1.5 text-rose-400 hover:text-rose-200 text-xs font-medium cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
         )}
 

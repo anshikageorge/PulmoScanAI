@@ -225,46 +225,115 @@ Instructions:
    - Include standard investigative medical disclaimer.
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: effectiveMime,
-              data: cleanBase64,
-            },
-          },
-          {
-            text: promptText,
-          },
-        ],
-      },
-      config: {
-        systemInstruction:
-          'You are a board-certified thoracic radiologist AI assistant specializing in pulmonary nodule characterization, Lung-RADS assessment, and chest imaging interpretation. Provide objective, concise, and structured diagnostic evaluations.',
-        responseMimeType: 'application/json',
-        responseSchema: lungCancerSchema,
-        thinkingConfig: {
-          thinkingLevel: ThinkingLevel.LOW,
-        },
-      },
-    });
-
-    const responseText = response.text;
-    if (!responseText) {
-      throw new Error('No response returned from the model.');
-    }
+    const responseText = await generateAnalysisWithFallback(
+      ai,
+      effectiveMime,
+      cleanBase64,
+      promptText,
+      lungCancerSchema
+    );
 
     const parsedData = JSON.parse(responseText);
     return res.json({ success: true, result: parsedData });
   } catch (error: any) {
     console.error('Error analyzing lung scan:', error);
-    return res.status(500).json({
-      error: error?.message || 'Failed to process the scan. Please check your image format and try again.',
-    });
+    let userMsg = error?.message || 'Failed to process the scan.';
+
+    try {
+      const parsedErr = JSON.parse(userMsg);
+      if (parsedErr?.error?.message) {
+        userMsg = parsedErr.error.message;
+      }
+    } catch (_) {
+      // not JSON string
+    }
+
+    if (
+      userMsg.includes('503') ||
+      userMsg.includes('high demand') ||
+      userMsg.includes('UNAVAILABLE') ||
+      userMsg.includes('temporarily')
+    ) {
+      userMsg =
+        'Google Gemini servers are temporarily experiencing a high demand spike. Please wait a few seconds and click "Retry Scan".';
+    } else if (userMsg.includes('API_KEY_INVALID') || userMsg.includes('API key not valid')) {
+      userMsg = 'Invalid Google API Key. Please verify your environment variable.';
+    } else if (userMsg.includes('RESOURCE_EXHAUSTED') || userMsg.includes('Quota')) {
+      userMsg = 'Gemini API quota exceeded for this key. Please check your rate limits or billing in Google AI Studio.';
+    }
+
+    return res.status(500).json({ error: userMsg });
   }
 });
+
+async function generateAnalysisWithFallback(
+  ai: GoogleGenAI,
+  effectiveMime: string,
+  cleanBase64: string,
+  promptText: string,
+  schema: any
+): Promise<string> {
+  const attempts: Array<{ model: string; thinkingLevel?: ThinkingLevel }> = [
+    { model: 'gemini-3.1-flash-lite' },
+    { model: 'gemini-3.8-flash', thinkingLevel: ThinkingLevel.LOW },
+    { model: 'gemini-flash-latest' },
+  ];
+
+  let lastError: any = null;
+
+  for (let i = 0; i < attempts.length; i++) {
+    const { model, thinkingLevel } = attempts[i];
+    try {
+      const config: any = {
+        systemInstruction:
+          'You are a board-certified thoracic radiologist AI assistant specializing in pulmonary nodule characterization, Lung-RADS assessment, and chest imaging interpretation. Provide objective, concise, and structured diagnostic evaluations.',
+        responseMimeType: 'application/json',
+        responseSchema: schema,
+      };
+
+      if (thinkingLevel) {
+        config.thinkingConfig = { thinkingLevel };
+      }
+
+      const response = await ai.models.generateContent({
+        model,
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType: effectiveMime,
+                data: cleanBase64,
+              },
+            },
+            {
+              text: promptText,
+            },
+          ],
+        },
+        config,
+      });
+
+      if (response && response.text) {
+        return response.text;
+      }
+    } catch (err: any) {
+      lastError = err;
+      const is503 =
+        err?.message?.includes('503') ||
+        err?.message?.includes('UNAVAILABLE') ||
+        err?.message?.includes('high demand') ||
+        err?.status === 503;
+
+      console.warn(`Model ${model} attempt failed (transient 503=${is503}):`, err?.message);
+
+      if (is503 && i < attempts.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+    }
+  }
+
+  throw lastError || new Error('All model attempts failed to process scan.');
+}
 
 // Setup Vite or static serving
 async function startServer() {
